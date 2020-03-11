@@ -73,7 +73,7 @@ public class Client {
                 message = stdin.readLine();
                 //Si message vide
                 if (message.length() == 0) {
-                    System.err.println("# Connexion terminée.");
+                    System.out.println("# Connexion terminée.");
                     //Fermeture de la sortie du socket
                     socket.shutdownOutput();
                     break;
@@ -91,7 +91,6 @@ public class Client {
 
             System.err.println("# Fin de la session.");
         } catch (IOException e) {
-            System.err.println("# Erreur E/S socket");
             e.printStackTrace();
             System.exit(8);
         }
