@@ -3,20 +3,21 @@ import java.net.*;
 
 public class Client {
 
-    public static void main(String[] args) throws IOException {
-        //Socket du client
-        Socket socket;
-        //Adresse IPv4 du serveur
-        String ip;
-        //Port TCP serveur
-        int port;
-        //Entrée clavier
-        BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in));
-        //Ecriture en sortie
-        PrintWriter out;
-        //Ecriture en entrée
-        BufferedReader in;
+    //Adresse IPv4 du serveur
+    private static String ip;
+    //Port TCP serveur
+    private static int port;
+    //Socket du client
+    private static Socket socket;
+    //Entrée clavier
+    private static BufferedReader stdin;
+    //Ecriture en sortie
+    private static PrintWriter out;
+    //Ecriture en entrée
+    private static BufferedReader in;
 
+    public static void main(String[] args) throws IOException {
+        stdin = new BufferedReader(new InputStreamReader(System.in));
         //Vérification des arguments
         if (args.length != 2) {
             //Arguments invalides
@@ -63,36 +64,78 @@ public class Client {
             } while (!pseudoValid);
             //Envoi du pseudo au server
             out.println(pseudo);
-            //Message validation
-            System.out.println("# Pseudo envoyé au serveur.");
+            //Message de connexion
+            System.out.println("# Connexion au serveur en cours.");
 
-            while (true) {
-                String message;
-                System.out.print("# Message: ");
-                //Récupération du message au clavier
-                message = stdin.readLine();
-                //Si message vide
-                if (message.length() == 0) {
-                    System.out.println("# Connexion terminée.");
-                    //Fermeture de la sortie du socket
-                    socket.shutdownOutput();
-                    break;
-                } else {
-                    //Envoi du message au serveur
-                    out.println(message);
-                }
-            }
+            //Instanciation d'un thread gérant les messages reçus du server
+            new Thread(new ServerMessageReceiver()).start();
 
-            //Fermeture
+            //Instanciation d'un thread gérant la saisie clavier du client
+            new Thread(new KeyboardInput()).start();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void exit() {
+        try {
             in.close();
             out.close();
             stdin.close();
             socket.close();
-
-            System.err.println("# Fin de la session.");
         } catch (IOException e) {
             e.printStackTrace();
-            System.exit(8);
+        }
+    }
+
+    public static class ServerMessageReceiver extends Thread {
+        @Override
+        public void run() {
+            try {
+                while (!socket.isInputShutdown()) {
+                    /* réception des données */
+                    String message = in.readLine();
+                    //Effacement du contenu affiché sur la dernière ligne
+                    System.out.print("\033[2K");
+                    //Affichage du message
+                    if (message != null) {
+                        System.out.println("\b\b" + message);
+                        System.out.print("> ");
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static class KeyboardInput extends Thread {
+        @Override
+        public void run() {
+            try {
+                while (true) {
+                    String message = "";
+                    System.out.print("> ");
+                    //Récupération du message au clavier
+                    message = stdin.readLine();
+                    //Si message vide
+                    if (message.length() == 0) {
+                        System.out.println("# Connexion terminée.");
+                        //Fermeture de la sortie du socket
+                        socket.shutdownOutput();
+                        socket.shutdownInput();
+                        break;
+                    } else {
+                        //Envoi du message au serveur
+                        out.println(message);
+                    }
+                }
+                Client.exit();
+                System.err.println("# Fin de la session.");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 }

@@ -9,7 +9,7 @@ public class SalonCentral {
                 System.out.println("# Démarrage du salon central sur le port " + args[0]);
                 while (true) {
                     Socket socketClient = socketServeur.accept();
-                    new EchoThread(socketClient).start();
+                    new ClientThread(socketClient).start();
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -17,11 +17,11 @@ public class SalonCentral {
         }
     }
 
-    public static class EchoThread extends Thread {
+    public static class ClientThread extends Thread {
         private Socket socket;
         private String pseudo;
 
-        public EchoThread(Socket clientSocket) {
+        public ClientThread(Socket clientSocket) {
             this.socket = clientSocket;
         }
 
