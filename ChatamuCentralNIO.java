@@ -3,6 +3,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
@@ -24,6 +25,7 @@ class ChatamuCentralNIO {
     private static ArrayList<ClientHandler> clients = new ArrayList<>();
 
     public static void main(String[] args) {
+        System.setProperty("file.encoding","UTF-8");
         int argc = args.length;
         ChatamuCentralNIO serveur;
         /* Traitement des arguments */
@@ -52,8 +54,6 @@ class ChatamuCentralNIO {
 
             executor = Executors.newWorkStealingPool();
 
-            new Thread(new MessagesBroadcaster()).start();
-
             while (true) {
                 selector.select();
                 Set<SelectionKey> selectionKeys = selector.selectedKeys();
@@ -66,7 +66,9 @@ class ChatamuCentralNIO {
                         csc.register(selector, SelectionKey.OP_READ);
                     }
                     if (key.isReadable()) {
-                        executor.execute(new ClientHandler(key));
+                        ClientHandler clientHandler = new ClientHandler(key);
+                        executor.execute(clientHandler);
+                        clients.add(clientHandler);
                         key.cancel();
                     }
                 }
@@ -80,32 +82,9 @@ class ChatamuCentralNIO {
 
     public static void broadcast(String author, String message) {
         for (ClientHandler client : clients) {
-            if (!client.pseudo.equals(author)) client.outgoingMessages.add(message);
+            if (!client.pseudo.equals(author)) client.outgoingMessages.add(message + "\n");
         }
         System.out.println(message);
-    }
-
-    //Thread gérant l'envoi des messages serveur aux clients connectés
-    public static class MessagesBroadcaster extends Thread {
-        public void run() {
-            while (true) {
-                for (ClientHandler client : clients) {
-                    //Récupération des messages à envoyer
-                    List<String> messages = client.getMessagesToSend();
-                    //S'il y a des messages à envoyer
-                    if (messages.size() > 0)
-                        //Pour chaque message à envoyer
-                        for (String message : messages)
-                            //Écriture du message sur le flux sortant du client
-                            client.sendMessage(message);
-                }
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                    throw new IllegalStateException(ex);
-                }
-            }
-        }
     }
 
     //Thread client
@@ -131,12 +110,23 @@ class ChatamuCentralNIO {
         public void sendMessage(String message) {
             try {
                 //Tableau contenant le message en bytes
-                byte[] backbuffer = message.getBytes();
+                byte[] backbuffer = (clientsColor + message + userColor).getBytes();
                 //Envoi du message au client
                 csc.write(ByteBuffer.wrap(backbuffer));
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        }
+
+        public void sendServerMessages() {
+            //Récupération des messages à envoyer
+            List<String> messages = getMessagesToSend();
+            //S'il y a des messages à envoyer
+            if (messages.size() > 0)
+                //Pour chaque message à envoyer
+                for (String message : messages)
+                    //Écriture du message sur le flux sortant du client
+                    sendMessage(message);
         }
 
         //Récupération des messsages à envoyer au client
@@ -156,12 +146,12 @@ class ChatamuCentralNIO {
             CharArrayWriter data = new CharArrayWriter();
             //Tant qu'il reste du contenu à consommer dans le buffer
             while(buffer.hasRemaining()) {
+                char c = (char)buffer.get();
                 //Consommation d'un caractère
-                data.append((char)buffer.get());
+                if (c != 0) data.append(c);
             }
             //Retour du message au format chaine de caractères
-            //Suppression du retour à la ligne
-            return data.toString().replace("\n","");
+            return data.toString();
         }
 
         @Override
@@ -178,33 +168,31 @@ class ChatamuCentralNIO {
                 //Notification de connexion du client au serveur
                 broadcast(pseudo, defaultColor + "# Connexion de " + pseudo + " au serveur.");
                 //Envoi d'un message de confirmation de connexion au serveur
-                sendMessage(defaultColor + "# Vous êtes connecté au serveur chatamu central !\n" + userColor);
+                sendMessage(defaultColor + "# Vous êtes connecté au serveur chatamu central !" + userColor);
                 //Nettoyage du buffer
                 buffer.clear();
                 //Tant que le client n'envoi pas un retour à la ligne
                 while (true) {
+                    sendServerMessages();
                     //Lecture du buffer
                     csc.read(buffer);
                     //Récupération du message
                     String message = extractMessage(buffer);
                     //Si le message est un retour à la ligne
-                    if (message.length() > 0 && message.getBytes()[0] == '\n') {
-                        //Fermeture du thread
-                        csc.close();
+                    if (message.getBytes().length > 0 && message.getBytes()[0] == '\b') {
+                        sendMessage("\b");
                         break;
                     }
-                    else if (message.length() > 0 && message.getBytes()[0] != 0){
+                    else if (message.getBytes().length > 0){
                         //Affichage du message
                         broadcast(pseudo, pseudo + " > " + message);
                     }
                     //Nettoyage du buffer
                     buffer.clear();
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException ex) {
-                        throw new IllegalStateException(ex);
-                    }
                 }
+                broadcast(pseudo, defaultColor + "# Déconnexion de " + pseudo + ".");
+                //Fermeture du thread
+                csc.close();
             } catch (Exception e) {
                 e.printStackTrace();
             }
