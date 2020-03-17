@@ -143,15 +143,18 @@ class ChatamuCentralNIO {
             //Inversion du buffer
             buffer.flip();
             //Instanciation d'un tableau de caractères de taille MESSAGE_LENGTH
-            CharArrayWriter data = new CharArrayWriter();
+            ArrayList<Byte> data = new ArrayList<>();
             //Tant qu'il reste du contenu à consommer dans le buffer
             while(buffer.hasRemaining()) {
-                char c = (char)buffer.get();
+                byte b = buffer.get();
                 //Consommation d'un caractère
-                if (c != 0) data.append(c);
+                if (b != 0) data.add(b);
             }
+            byte[] conversion = new byte[data.size()];
+            for(int i = 0; i < data.size(); i++)
+                conversion[i] = data.get(i);
             //Retour du message au format chaine de caractères
-            return data.toString();
+            return new String(conversion, StandardCharsets.UTF_8);
         }
 
         @Override

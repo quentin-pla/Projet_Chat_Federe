@@ -5,6 +5,7 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 public class ClientNIO {
@@ -89,15 +90,19 @@ public class ClientNIO {
         //Inversion du buffer
         buffer.flip();
         //Instanciation d'un tableau de caractères de taille MESSAGE_LENGTH
-        CharArrayWriter data = new CharArrayWriter();
+        ArrayList<Byte> data = new ArrayList<>();
         //Tant qu'il reste du contenu à consommer dans le buffer
         while(buffer.hasRemaining()) {
+            byte b = buffer.get();
             //Consommation d'un caractère
-            data.append((char)buffer.get());
+            if (b != 0) data.add(b);
         }
+        byte[] conversion = new byte[data.size()];
+        for(int i = 0; i < data.size(); i++)
+            conversion[i] = data.get(i);
         //Retour du message au format chaine de caractères
         //Suppression du retour à la ligne
-        return data.toString().replace("\n","");
+        return new String(conversion, StandardCharsets.UTF_8).replace("\n","");
     }
 
     public static class ServerMessageReceiver extends Thread {
