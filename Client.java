@@ -17,6 +17,7 @@ public class Client {
     //Entrée clavier
     private static BufferedReader stdin;
 
+    //Autorisation d'utiliser le clavier
     private static boolean allowInput = true;
 
     public static void main(String[] args) throws IOException {
@@ -83,18 +84,22 @@ public class Client {
             try {
                 //Instanciation d'un buffer de bytes de taille 128
                 ByteBuffer buffer = ByteBuffer.allocate(128);
+                //Tant qu'il est possible de lire depuis le socket
                 while (socket.read(buffer) != -1) {
+                    //Récupération du message
                     String message = extractMessage(buffer);
                     //Effacement du contenu affiché sur la dernière ligne
                     System.out.print("\033[2K");
-                    //Affichage du message
+                    //Affichage du message s'il n'est pas vide
                     if (message.length() > 0) {
                         System.out.print(message);
                     }
+                    //Nettoyage du buffer
                     buffer.clear();
                 }
-//                System.out.println("# Déconnection du serveur.");
+                //Désactivation accès clavier
                 allowInput = false;
+                //Interruption thread
                 interrupt();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -106,8 +111,10 @@ public class Client {
         @Override
         public void run() {
             try {
+                //Instanciation d'un buffer de bytes
                 ByteBuffer buffer = ByteBuffer.allocate(128);
                 System.out.println("# Pour vous connecter au serveur entrez la commande : LOGIN pseudo");
+                //Tant qu'il est autorisé d'utiliser le clavier
                 while (allowInput) {
                     //Récupération du message au clavier
                     String message = stdin.readLine();
@@ -115,12 +122,16 @@ public class Client {
                     buffer.put(message.getBytes());
                     //Inversion du buffer
                     buffer.flip();
-                    if (socket.write(buffer) == -1) break;
+                    int checkWrite = socket.write(buffer);
                     //Nettoyage du buffer
                     buffer.clear();
+                    if (checkWrite == -1) break;
                 }
+                //Fermeture de l'entrée clavier
                 stdin.close();
+                //Fermeture du socket
                 socket.close();
+                //Interruption du thread
                 interrupt();
             } catch (IOException e) {
                 e.printStackTrace();
