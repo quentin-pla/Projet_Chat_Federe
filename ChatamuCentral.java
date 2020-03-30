@@ -1,4 +1,6 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
@@ -16,28 +18,46 @@ class ChatamuCentral {
     //Couleur par défaut du terminal
     private final static String defaultColor = "\u001B[0m";
 
-    //Selector pour des I/O multiplexées
+    //Port du serveur
+    private static int serverPort;
+
+    //Pseudo du serveur
+    private static String serverLogin;
+
+    //Entrée clavier
+    private static BufferedReader stdin;
+
+    //Liste des clients connectés au serveur
+    private static ArrayList<SocketHandler> clients = new ArrayList<>();
+
+    private static ArrayList<String> linkedServersPorts = new ArrayList<>();
+
+    //Sélecteur
     private static Selector selector;
-    //Socket serveur TCP
-    private static ServerSocketChannel ssc;
+
     //Executeur
     private static Executor executor;
 
-    //Liste des clients connectés au serveur
-    private static ArrayList<ClientHandler> clients = new ArrayList<>();
+    //Nombre de messages groupés maximal à envoyer
+    private static final int MAX_OUTGOING = 50;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         //Nombre d'arguments passés en paramètres
         int argc = args.length;
         //Serveur chatamu
-        ChatamuCentral serveur;
+        ChatamuCentral chatamu;
+
         //Traitement des arguments
         if (argc == 1) {
             try {
+                //Initialisation variable port serveur
+                serverPort = Integer.parseInt(args[0]);
+                //Initialisation variable pseudo serveur
+                serverLogin = "#" + serverPort;
                 //Instanciation du serveur
-                serveur = new ChatamuCentral();
+                chatamu = new ChatamuCentral();
                 //Démarrage du serveur sur le port souhaité
-                serveur.demarrer(Integer.parseInt(args[0]));
+                chatamu.demarrer(serverPort);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -53,8 +73,9 @@ class ChatamuCentral {
         try {
             //Ouverture du sélecteur
             selector = Selector.open();
+
             //Ouverture du socket du serveur
-            ssc = ServerSocketChannel.open();
+            ServerSocketChannel ssc = ServerSocketChannel.open();
             //Assignation du port au serveur
             ssc.socket().bind(new InetSocketAddress(port));
             //Configuration canal en mode non bloquant
@@ -65,9 +86,16 @@ class ChatamuCentral {
             ssc.register(selector, ops, null);
 
             //Pool de threads voleurs de travail
+            //Executeur
             executor = Executors.newWorkStealingPool();
 
-            while (true) {
+            //Récupération de la saisie clavier
+            stdin = new BufferedReader(new InputStreamReader(System.in));
+
+            //Thread gérant les entrées clavier
+            executor.execute(new KeyboardInput());
+
+            while (selector.isOpen()) {
                 //Sélections des clés prêtes à être utilisées
                 selector.select();
                 //Liste des clés sélectionnées
@@ -80,9 +108,11 @@ class ChatamuCentral {
                     SelectionKey key = keys.next();
                     //Si la clé peut accepter une nouvelle connexion
                     if (key.isAcceptable()) {
+                        //Récupération du canal du serveur
+                        ServerSocketChannel server = (ServerSocketChannel)key.channel();
                         //Accepte la connexion au serveur
-                        SocketChannel csc = ssc.accept();
-                        //Configuration en mode non-bloquant
+                        SocketChannel csc = server.accept();
+                        //Configuration en mode non-bloquants
                         csc.configureBlocking(false);
                         //Enregistrement du canal de la clé en mode lecture
                         csc.register(selector, SelectionKey.OP_READ);
@@ -90,11 +120,11 @@ class ChatamuCentral {
                     //Si le canal de la clé est prêt à être lu
                     if (key.isReadable()) {
                         //Création d'un thread client
-                        ClientHandler clientHandler = new ClientHandler(key);
+                        SocketHandler socketHandler = new SocketHandler(key);
                         //Execution du thread
-                        executor.execute(clientHandler);
+                        executor.execute(socketHandler);
                         //Ajout du client à la liste des clients connectés
-                        clients.add(clientHandler);
+                        clients.add(socketHandler);
                         //Annulation de la clé
                         key.cancel();
                     }
@@ -111,7 +141,7 @@ class ChatamuCentral {
     //Ajouter un message à la liste des messages à envoyer des clients
     public static void broadcast(String author, String message) {
         //Si l'auteur du message est le serveur
-        if (author.equals("#"))
+        if (author.startsWith("#"))
             //Couleur du message par défaut
             message = defaultColor + message;
         else
@@ -119,22 +149,29 @@ class ChatamuCentral {
             message = clientsColor + message;
 
         //Pour chaque client connecté
-        for (ClientHandler client : clients)
+        for (SocketHandler client : clients)
             //Si le pseudo du client est définit
             if (client.pseudo != null)
                 //Si le pseudo est différent de l'auteur du message,
                 // ajout du message à la liste du client
                 if (!client.pseudo.equals(author)) client.outgoingMessages.add(message);
+
         //Affichage du message sur le serveur
         System.out.println(defaultColor + message);
     }
 
-    //Vérifier que le pseudo du nouveau client n'est pas déja pris
-    public static boolean checkPseudo(ClientHandler newClient, String pseudo) {
+    //Vérification du pseudo syntaxiquement
+    public static boolean isPseudoValid(String pseudo) {
+        //Vérification du pseudo, alphabétique, supérieur à 3 caractères
+        return pseudo.matches("[a-zA-Z0-9]+") && pseudo.length() >= 3;
+    }
+
+    //Vérifier qu'un pseudo n'est pas déja attribué
+    public static boolean isPseudoAvailable(SocketHandler newClient, String pseudo) {
         //Si des clients sont connectés au serveur
         if (clients.size() > 0)
             //Pour chaque client
-            for (ClientHandler client : clients)
+            for (SocketHandler client : clients)
                 //Si le pseudo du client est définit
                 if (client.pseudo != null)
                     //Si le client n'est pas le nouveau client et que son pseudo vaut celui choisi
@@ -144,31 +181,143 @@ class ChatamuCentral {
         return true;
     }
 
+    //Extraire un message contenu dans un buffer
+    private static String extractMessage(ByteBuffer buffer) {
+        //Inversion du buffer
+        buffer.flip();
+        //Instanciation d'un tableau de caractères de taille MESSAGE_LENGTH
+        ArrayList<Byte> data = new ArrayList<>();
+        //Tant qu'il reste du contenu à consommer dans le buffer
+        while(buffer.hasRemaining()) {
+            //Consommation d'un caractère
+            byte b = buffer.get();
+            //Si le caractère est définit on l'ajoute à la liste
+            if (b != 0) data.add(b);
+        }
+        //Instanciation d'un tableau de bytes
+        byte[] conversion = new byte[data.size()];
+        //Ajout des caractères de data dans le tableau
+        for(int i = 0; i < data.size(); i++)
+            conversion[i] = data.get(i);
+        //Retour du message au format chaine de caractères, encodage UTF-8
+        // suppression des retours à la ligne
+        return new String(conversion, StandardCharsets.UTF_8).replace("\n","");
+    }
+
+    //Connecter se serveur à un autre serveur
+    private static void linkToServer(String port) {
+        //Si le port n'est pas contenu dans la liste des serveurs déjà connectés
+        if (!linkedServersPorts.contains(port) && Integer.parseInt(port) != serverPort) {
+            //Ajout du port à la liste des ports déjà connectés
+            linkedServersPorts.add(port);
+            try {
+                //Ouverture d'un canal du socket
+                SocketChannel socket = SocketChannel.open();
+                //Connexion du socket à l'adresse ip et au port passés en paramètre
+                socket.connect(new InetSocketAddress("localhost", Integer.parseInt(port)));
+                //Buffer de bytes
+                ByteBuffer buffer = ByteBuffer.allocate(128);
+                String message = "SERVERCONNECT " + serverPort;
+                //Envoi du message
+                buffer.put(message.getBytes());
+                //Inversion du buffer
+                buffer.flip();
+                //Écriture du message dans le serveur
+                socket.write(buffer);
+                //Nettoyage du buffer
+                buffer.clear();
+                //Lancement d'un thread gérant la réception des messages depuis le serveur distant
+                executor.execute(new LinkedServerMessageReceiver(socket, port));
+            } catch (IOException e) {
+                //Message d'erreur
+                System.err.println("# Liaison impossible avec le serveur distant");
+                e.printStackTrace();
+            }
+        }
+    }
+
+    ////################# LISTE DES THREADS ##################
+
+    //Thread gérant la réception des messages provenants des autres serveurs
+    public static class LinkedServerMessageReceiver implements Runnable {
+
+        //Socket
+        private SocketChannel socket;
+        //Pseudo serveur distant
+        private String linkedServerLogin;
+
+        //Constructeur
+        public LinkedServerMessageReceiver(SocketChannel socket, String port) {
+            this.socket = socket;
+            this.linkedServerLogin = "#" + port;
+        }
+
+        @Override
+        public void run() {
+            try {
+                //Message au format string récupéré depuis le serveur
+                String message = "";
+                //Buffer de bytes contenant le message en bytes
+                ByteBuffer buffer = ByteBuffer.allocate(128);
+                //Tant qu'il est possible de lire depuis le socket
+                while (socket.read(buffer) != -1) {
+                    //Récupération du message
+                    message = extractMessage(buffer);
+                    //Affichage du message s'il n'est pas vide
+                    if (message.getBytes().length > 0)
+                        //Affichage du message
+                        //On utilise le pseudo du serveur distant afin que le message
+                        //ne lui soit pas renvoyé
+                        broadcast(linkedServerLogin, message);
+                    //Nettoyage du buffer
+                    buffer.clear();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    //Thread clavier
+    public static class KeyboardInput implements Runnable {
+        @Override
+        public void run() {
+            try {
+                //Tant qu'il est autorisé d'utiliser le clavier
+                while (selector.isOpen()) {
+                    String message = "";
+                    //Récupération du message au clavier
+                    message = stdin.readLine();
+                    //Si le message est SERVERCONNECT, établissement d'une liaison au serveur distant
+                    if (message.startsWith("SERVERCONNECT ")) linkToServer(message.substring(14));
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     //Thread client
-    private static class ClientHandler implements Runnable {
-        //Nombre de messages groupés maximal à envoyer
-        private final int MAX_OUTGOING = 10;
+    private static class SocketHandler implements Runnable {
         //Taille maximale pour un message
         private final int MESSAGE_LENGTH = 128;
         //Socket client
         private SocketChannel csc;
-        //Clé liée au client
-        private SelectionKey key;
         //Pseudo du client
         private String pseudo = null;
         //Liste des messages à envoyer au client
         private ArrayBlockingQueue<String> outgoingMessages = new ArrayBlockingQueue<>(MAX_OUTGOING);
+        //Propriété pour savoir si c'est un lien avec un serveur
+        private boolean isServerLink = false;
 
         //Constructeur
-        public ClientHandler(SelectionKey key) {
-            //Association de la clé passée en paramètre
-            this.key = key;
+        public SocketHandler(SelectionKey key) {
             //Récupération du canal de la clé
             this.csc = (SocketChannel) key.channel();
         }
 
         //Envoyer un message au client depuis le serveur
-        public void sendMessage(String message) {
+        private void sendMessage(String message) {
             try {
                 //Ajout de la couleur en fonction de l'état de connexion
                 message = (pseudo != null) ? message + userColor : message + defaultColor;
@@ -182,7 +331,7 @@ class ChatamuCentral {
         }
 
         //Envoyer les messages du serveur au clients connectés
-        public void sendServerMessages() {
+        private void sendServerMessages() {
             //Récupération des messages à envoyer
             List<String> messages = getMessagesToSend();
             //S'il y a des messages à envoyer
@@ -194,35 +343,13 @@ class ChatamuCentral {
         }
 
         //Récupération des messsages à envoyer au client
-        public List<String> getMessagesToSend() {
+        private List<String> getMessagesToSend() {
             //Liste des messages à envoyer
             List<String> messagesToSend = new LinkedList<>();
             //Récupération des messages à envoyer
             outgoingMessages.drainTo(messagesToSend);
+            //Retourne la liste des messages
             return messagesToSend;
-        }
-
-        //Extraire le message contenu dans le buffer
-        private String extractMessage(ByteBuffer buffer) {
-            //Inversion du buffer
-            buffer.flip();
-            //Instanciation d'un tableau de caractères de taille MESSAGE_LENGTH
-            ArrayList<Byte> data = new ArrayList<>();
-            //Tant qu'il reste du contenu à consommer dans le buffer
-            while(buffer.hasRemaining()) {
-                //Consommation d'un caractère
-                byte b = buffer.get();
-                //Si le caractère est définit on l'ajoute à la liste
-                if (b != 0) data.add(b);
-            }
-            //Instanciation d'un tableau de bytes
-            byte[] conversion = new byte[data.size()];
-            //Ajout des caractères de data dans le tableau
-            for(int i = 0; i < data.size(); i++)
-                conversion[i] = data.get(i);
-            //Retour du message au format chaine de caractères, encodage UTF-8
-            // suppression des retours à la ligne
-            return new String(conversion, StandardCharsets.UTF_8).replace("\n","");
         }
 
         @Override
@@ -234,15 +361,25 @@ class ChatamuCentral {
                 while (csc.read(buffer) != -1) {
                     //Envoi au client des messages serveur
                     sendServerMessages();
+                    //Si c'est un lien de serveur on passe la suite du code
+                    if (isServerLink) continue;
                     //Récupération du message
                     String message = extractMessage(buffer);
                     //Si le message est EXIT on sort de la boucle
                     if (message.equals("EXIT")) {
                         sendMessage(defaultColor + "# Déconnexion du serveur.");
                         break;
+                    } else if (message.startsWith("SERVERCONNECT ")) {
+                        isServerLink = true;
+                        String port = message.substring(14);
+                        pseudo = "#" + port;
+                        //Envoi d'un message de confirmaton de liaison
+                        sendMessage(defaultColor + "# Liaison établie au serveur connecté sur le port " + serverPort);
+                        //Liaison de ce serveur au serveur distant
+                        linkToServer(port);
                     }
                     //Si le message n'est pas vide
-                    else if (message.getBytes().length > 0){
+                    else if (message.getBytes().length > 0) {
                         //Si le pseudo n'est pas définit
                         if (pseudo == null) {
                             //Si le message commence par LOGIN
@@ -250,11 +387,11 @@ class ChatamuCentral {
                                 //Récupération du pseudo dans le message
                                 pseudo = message.substring(6);
                                 //Vérification du pseudo, alphabétique, supérieur à 3 caractères
-                                if (pseudo.matches("[a-zA-Z]+") && pseudo.length() >= 3) {
+                                if (isPseudoValid(pseudo)) {
                                     //Si le pseudo est disponible
-                                    if (checkPseudo(this, pseudo)) {
+                                    if (isPseudoAvailable(this, pseudo)) {
                                         //Notification de connexion du client au serveur
-                                        broadcast("#", "# Connexion de " + pseudo + " au serveur.");
+                                        broadcast(serverLogin, "# Connexion de " + pseudo + " au serveur");
                                         //Envoi message instruction au client
                                         sendMessage(defaultColor + "# Pour envoyer un message saisir la commande : MESSAGE message");
                                     } else {
@@ -283,7 +420,10 @@ class ChatamuCentral {
                 }
                 //Si le pseudo est définit
                 if (pseudo != null)
-                    broadcast("#", "# Déconnexion de " + pseudo + ".");
+                    if (pseudo.startsWith("#"))
+                        broadcast(serverLogin, "# Rupture liaison serveur connecté au port " + pseudo.substring(1));
+                    else
+                        broadcast("#", "# Déconnexion de " + pseudo + ".");
                 //Suppression du client dans la liste des clients
                 clients.remove(this);
                 //Fermeture du thread

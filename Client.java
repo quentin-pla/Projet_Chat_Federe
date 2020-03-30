@@ -20,6 +20,10 @@ public class Client {
     //Autorisation d'utiliser le clavier
     private static boolean allowInput = true;
 
+    public Client(String ip, String port) throws IOException {
+        main(new String[]{ip,port});
+    }
+
     public static void main(String[] args) throws IOException {
         //Récupération de la saisie clavier
         stdin = new BufferedReader(new InputStreamReader(System.in));
