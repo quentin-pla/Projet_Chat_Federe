@@ -30,7 +30,11 @@ class ChatamuCentral {
     //Liste des clients connectés au serveur
     private static ArrayList<SocketHandler> clients = new ArrayList<>();
 
-    private static ArrayList<String> linkedServersPorts = new ArrayList<>();
+    //Liste des ports des serveurs connectés ainsi que la liste des ports des serveurs auxquels ils sont connectés
+    private static HashMap<Integer, HashSet<Integer>> linkedServersPorts = new HashMap<>();
+
+    //Liste des messages à afficher de manière ordonnée
+    private static PriorityQueue<String> outMessages = new PriorityQueue<>();
 
     //Sélecteur
     private static Selector selector;
@@ -41,14 +45,17 @@ class ChatamuCentral {
     //Nombre de messages groupés maximal à envoyer
     private static final int MAX_OUTGOING = 50;
 
-    public static void main(String[] args) throws IOException {
+    //Main
+    public static void main(String[] args) {
         //Nombre d'arguments passés en paramètres
         int argc = args.length;
         //Serveur chatamu
         ChatamuCentral chatamu;
+        //Port
+        String port = args[0];
 
-        //Traitement des arguments
-        if (argc == 1) {
+        //Vérification nombre d'arguments et syntaxe port
+        if (argc == 1 && port.matches("[0-9]+")) {
             try {
                 //Initialisation variable port serveur
                 serverPort = Integer.parseInt(args[0]);
@@ -63,13 +70,13 @@ class ChatamuCentral {
             }
         } else {
             //Message d'usage de la commande
-            System.out.println("Usage: java EchoServer port");
+            outMessages.add("Usage: java ChatamuCentral port");
         }
     }
 
     //Démarrage du serveur
     public void demarrer(int port) {
-        System.out.println("# Démarrage du chatamu central sur le port " + port);
+        outMessages.add("# Démarrage du chatamu central sur le port " + port);
         try {
             //Ouverture du sélecteur
             selector = Selector.open();
@@ -94,6 +101,9 @@ class ChatamuCentral {
 
             //Thread gérant les entrées clavier
             executor.execute(new KeyboardInput());
+
+            //Thread gérant l'écriture des messages
+            executor.execute(new MessagesPrinter());
 
             while (selector.isOpen()) {
                 //Sélections des clés prêtes à être utilisées
@@ -133,7 +143,7 @@ class ChatamuCentral {
                 keys.remove();
             }
         } catch (IOException ex) {
-            System.out.println("# Arrêt anormal du serveur.");
+            outMessages.add("# Arrêt anormal du serveur.");
             ex.printStackTrace();
         }
     }
@@ -154,10 +164,19 @@ class ChatamuCentral {
             if (client.pseudo != null)
                 //Si le pseudo est différent de l'auteur du message,
                 // ajout du message à la liste du client
-                if (!client.pseudo.equals(author)) client.outgoingMessages.add(message);
-
+                if (!client.pseudo.equals(author)) {
+//                    //Message provenant d'un serveur
+//                    if (author.startsWith("#"))
+//                        //Si le client est un lien vers un serveur
+//                        if (client.pseudo.startsWith("#"))
+//                            //Ajout du message à sa liste
+//                            client.outgoingMessages.add(message);
+//                    else
+                    //Ajout du message à la liste du client
+                    client.outgoingMessages.add(message);
+                }
         //Affichage du message sur le serveur
-        System.out.println(defaultColor + message);
+        outMessages.add(defaultColor + message);
     }
 
     //Vérification du pseudo syntaxiquement
@@ -205,19 +224,20 @@ class ChatamuCentral {
     }
 
     //Connecter se serveur à un autre serveur
-    private static void linkToServer(String port) {
+    private static void linkToServer(int port) {
         //Si le port n'est pas contenu dans la liste des serveurs déjà connectés
-        if (!linkedServersPorts.contains(port) && Integer.parseInt(port) != serverPort) {
+        if (!linkedServersPorts.containsKey(port) && port != serverPort) {
             //Ajout du port à la liste des ports déjà connectés
-            linkedServersPorts.add(port);
+            linkedServersPorts.put(port, new HashSet<>());
             try {
                 //Ouverture d'un canal du socket
                 SocketChannel socket = SocketChannel.open();
                 //Connexion du socket à l'adresse ip et au port passés en paramètre
-                socket.connect(new InetSocketAddress("localhost", Integer.parseInt(port)));
+                socket.connect(new InetSocketAddress("localhost", port));
                 //Buffer de bytes
                 ByteBuffer buffer = ByteBuffer.allocate(128);
-                String message = "SERVERCONNECT " + serverPort;
+                //Envoi d'un message au serveur distant pour le lier à celui-ci
+                String message = "\bLINKTO " + serverPort;
                 //Envoi du message
                 buffer.put(message.getBytes());
                 //Inversion du buffer
@@ -228,6 +248,8 @@ class ChatamuCentral {
                 buffer.clear();
                 //Lancement d'un thread gérant la réception des messages depuis le serveur distant
                 executor.execute(new LinkedServerMessageReceiver(socket, port));
+                //Envoi d'un message de confirmaton de liaison
+                outMessages.add(defaultColor + "# Liaison établie au serveur connecté sur le port " + port);
             } catch (IOException e) {
                 //Message d'erreur
                 System.err.println("# Liaison impossible avec le serveur distant");
@@ -236,7 +258,26 @@ class ChatamuCentral {
         }
     }
 
+    private static void updateServersLinks() {
+        //Pour chaque client connecté au serveur
+        for (SocketHandler client : clients)
+            //Si le client est un lien serveur
+            if (client.isServerLink)
+                //Renvoi la liste des serveurs connectés pour mettre à jour la liste du serveur distant
+                client.sendMessage("\bUPDATELINKS " + linkedServersPorts.keySet());
+    }
+
     ////################# LISTE DES THREADS ##################
+
+    public static class MessagesPrinter implements Runnable {
+        @Override
+        public void run() {
+            //Tant que le sélecteur est ouvert
+            while (selector.isOpen())
+                if (outMessages.size() > 0)
+                    System.out.println(outMessages.poll());
+        }
+    }
 
     //Thread gérant la réception des messages provenants des autres serveurs
     public static class LinkedServerMessageReceiver implements Runnable {
@@ -245,33 +286,61 @@ class ChatamuCentral {
         private SocketChannel socket;
         //Pseudo serveur distant
         private String linkedServerLogin;
+        //Port du serveur distant
+        private int linkedServerPort;
 
         //Constructeur
-        public LinkedServerMessageReceiver(SocketChannel socket, String port) {
+        public LinkedServerMessageReceiver(SocketChannel socket, int port) {
             this.socket = socket;
             this.linkedServerLogin = "#" + port;
+            this.linkedServerPort = port;
         }
+
+        //TODO faire une association entre chaque serveur et pas en queue car sinon un serveur du milieu meurt et terminé
+        //TODO transférer tous les clients d'un serveur vers un autre lorsqu'il se met OFF
 
         @Override
         public void run() {
             try {
                 //Message au format string récupéré depuis le serveur
-                String message = "";
+                String message;
                 //Buffer de bytes contenant le message en bytes
                 ByteBuffer buffer = ByteBuffer.allocate(128);
                 //Tant qu'il est possible de lire depuis le socket
                 while (socket.read(buffer) != -1) {
                     //Récupération du message
                     message = extractMessage(buffer);
+                    //Si le message reçu par le serveur distant commence par LINKEDSERVERS
+                    if (message.startsWith("\bUPDATELINKS")) {
+                        //Récupération des ports
+                        message = message.substring(message.indexOf('[')+1, message.lastIndexOf(']'));
+                        //Explosion du string en tableau de string pour séparer les ports
+                        String[] stringPorts = message.split(", ");
+                        //Ajout des ports dans la liste des ports déjà connectés
+                        for (String port : stringPorts)
+                            linkedServersPorts.get(linkedServerPort).add(Integer.parseInt(port));
+                    }
                     //Affichage du message s'il n'est pas vide
-                    if (message.getBytes().length > 0)
+                    else if (message.getBytes().length > 0)
                         //Affichage du message
                         //On utilise le pseudo du serveur distant afin que le message
-                        //ne lui soit pas renvoyé
+                        //ne lui soit pas renvoyé et ainsi éviter une boucle sans fin
                         broadcast(linkedServerLogin, message);
                     //Nettoyage du buffer
                     buffer.clear();
                 }
+                //Récupération de la liste des serveurs connectés de ce serveur
+                HashSet<Integer> linkedServerConnectedPorts = linkedServersPorts.get(linkedServerPort);
+                //Pour chaque port connecté, on vérifie qu'il soit dans la liste de ceux connectés à ce serveur
+                for (int port : linkedServerConnectedPorts)
+                    //Si le port n'est pas présent dans la liste on se connecte au serveur distant
+                    if (!linkedServersPorts.containsKey(port))
+                        //Établissement d'une liaison vers le serveur distant
+                        linkToServer(port);
+                //Suppression du port du serveur dans la liste des ports connectés
+                linkedServersPorts.remove(linkedServerPort);
+                //Afichage d'un message pour constater une rupture avec un serveur distant
+                outMessages.add("# Rupture liaison serveur connecté au port " + linkedServerPort);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -285,11 +354,17 @@ class ChatamuCentral {
             try {
                 //Tant qu'il est autorisé d'utiliser le clavier
                 while (selector.isOpen()) {
-                    String message = "";
+                    String message;
                     //Récupération du message au clavier
                     message = stdin.readLine();
                     //Si le message est SERVERCONNECT, établissement d'une liaison au serveur distant
-                    if (message.startsWith("SERVERCONNECT ")) linkToServer(message.substring(14));
+                    if (message.startsWith("SERVERCONNECT ")) {
+                        //Récupération du port
+                        int port = Integer.parseInt(message.substring(14));
+                        //Liaison du serveur
+                        linkToServer(port);
+                    }
+                    else if (message.equals("CONNECTIONS")) outMessages.add(linkedServersPorts.toString());
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -320,7 +395,7 @@ class ChatamuCentral {
         private void sendMessage(String message) {
             try {
                 //Ajout de la couleur en fonction de l'état de connexion
-                message = (pseudo != null) ? message + userColor : message + defaultColor;
+                message = (pseudo != null && !pseudo.startsWith("#")) ? message + userColor : message + defaultColor;
                 //Tableau contenant le message en bytes
                 byte[] backbuffer = (message + "\n").getBytes();
                 //Envoi du message au client
@@ -367,16 +442,19 @@ class ChatamuCentral {
                     String message = extractMessage(buffer);
                     //Si le message est EXIT on sort de la boucle
                     if (message.equals("EXIT")) {
+                        //Envoi d'un message de confirmation
                         sendMessage(defaultColor + "# Déconnexion du serveur.");
                         break;
-                    } else if (message.startsWith("SERVERCONNECT ")) {
+                    //Si le message commence par LINKTO
+                    //on ajoute un backspace au début afin qu'un client ne puisse pas saisir la commande
+                    } else if (message.startsWith("\bLINKTO ")) {
                         isServerLink = true;
-                        String port = message.substring(14);
+                        String port = message.substring(8).trim();
                         pseudo = "#" + port;
-                        //Envoi d'un message de confirmaton de liaison
-                        sendMessage(defaultColor + "# Liaison établie au serveur connecté sur le port " + serverPort);
                         //Liaison de ce serveur au serveur distant
-                        linkToServer(port);
+                        linkToServer(Integer.parseInt(port));
+                        //Mise à jour des liens entre chaque serveur connectés
+                        updateServersLinks();
                     }
                     //Si le message n'est pas vide
                     else if (message.getBytes().length > 0) {
@@ -418,12 +496,9 @@ class ChatamuCentral {
                     //Nettoyage du buffer
                     buffer.clear();
                 }
-                //Si le pseudo est définit
-                if (pseudo != null)
-                    if (pseudo.startsWith("#"))
-                        broadcast(serverLogin, "# Rupture liaison serveur connecté au port " + pseudo.substring(1));
-                    else
-                        broadcast("#", "# Déconnexion de " + pseudo + ".");
+                //Si le pseudo est définit et que le client n'est pas un lien vers un serveur
+                if (pseudo != null && !pseudo.startsWith("#"))
+                    broadcast(serverLogin, "# Déconnexion de " + pseudo + ".");
                 //Suppression du client dans la liste des clients
                 clients.remove(this);
                 //Fermeture du thread
