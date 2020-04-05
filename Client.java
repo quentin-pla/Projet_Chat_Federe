@@ -18,7 +18,11 @@ public class Client {
     //Port TCP serveur
     private static int port;
 
+    //Pseudo du client
     private static String pseudo;
+
+    //Salon où se situe le client
+    private static String fair;
 
     //Socket du client
     private static SocketChannel socket;
@@ -35,6 +39,9 @@ public class Client {
     //Autorisation d'utiliser le clavier
     private static boolean allowInput;
 
+    //Singleton contenant des méthodes pour le chat
+    public static ChatFunctions chatFunctions;
+
     //Liste des messages à afficher de manière ordonnée
     private static PriorityQueue<String> messagesToAnalyze = new PriorityQueue<>();
 
@@ -46,6 +53,8 @@ public class Client {
             //Fin du programme
             System.exit(1);
         }
+        //Récupération de l'instance de la classe ChatFunctions
+        chatFunctions = ChatFunctions.getInstance();
         //Initialisation de l'executeur
         executor = Executors.newFixedThreadPool(2);
         //Récupération de la saisie clavier
@@ -99,35 +108,13 @@ public class Client {
                 //Suppression du port dans la liste des ports disponibles
                 availableServerPorts.remove(port);
                 //Envoi d'un message pour se connecter avec le même pseudo
-                String message = "RECONNECT " + pseudo;
+                String message = "RECONNECT " + fair + "@" + pseudo;
                 //Écriture du message dans le serveur pour se connecter
                 socket.write(ByteBuffer.wrap((message).getBytes()));
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-    }
-
-    //Extraire le message contenu dans le buffer
-    private static String extractMessage(ByteBuffer buffer) {
-        //Inversion du buffer
-        buffer.flip();
-        //Instanciation d'un vecteur de bytes
-        ArrayList<Byte> data = new ArrayList<>();
-        //Tant qu'il reste du contenu à consommer dans le buffer
-        while (buffer.hasRemaining()) {
-            //Consommation d'un caractère
-            byte b = buffer.get();
-            //Ajout du caractère dans le tableau s'il ne vaut pas rien
-            if (b != 0) data.add(b);
-        }
-        //Instanciation d'un tableau de bytes de la taille du vecteur
-        byte[] conversion = new byte[data.size()];
-        //Ajout des bytes du vecteur dans le tableau de bytes
-        for (int i = 0; i < data.size(); i++)
-            conversion[i] = data.get(i);
-        //Retour du message au format chaine de caractères et suppression des retours à la ligne
-        return new String(conversion, StandardCharsets.UTF_8).trim();
     }
 
     //Thread gérant les messages reçus depuis le serveur
@@ -140,7 +127,7 @@ public class Client {
                 //Tant qu'il est possible de lire depuis le socket
                 while (socket.read(buffer) != -1) {
                     //Récupération du message
-                    String message = extractMessage(buffer);
+                    String message = chatFunctions.extractMessage(buffer);
                     if (message.length() > 0) {
                         if (message.contains("\n")) {
                             String[] strings = message.split("\n");
@@ -189,6 +176,11 @@ public class Client {
             else if (message.startsWith("PSEUDO")) {
                 //Définition du pseudo au client
                 pseudo = message.substring(message.indexOf('[') + 1, message.lastIndexOf(']'));
+            }
+            //Message du serveur retournant le pseudo du client après avoir été connecté
+            else if (message.startsWith("FAIR")) {
+                //Définition du pseudo au client
+                fair = message.substring(message.indexOf('[') + 1, message.lastIndexOf(']'));
             }
             else {
                 //Effacement du contenu affiché sur la dernière ligne
