@@ -1,9 +1,9 @@
+package models.chatamu;
+
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.PriorityQueue;
@@ -11,7 +11,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * Client serveur
+ * models.chatamu.Client serveur
  */
 public class Client {
 
@@ -120,7 +120,7 @@ public class Client {
     public void init() {
         //Connexion au serveur
         try {
-            //Récupération de l'instance de la classe ChatFunctions
+            //Récupération de l'instance de la classe models.chatamu.ChatFunctions
             chatFunctions = ChatFunctions.getInstance();
             //Initialisation de l'executeur
             executor = Executors.newFixedThreadPool(2);

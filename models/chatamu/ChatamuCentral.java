@@ -1,3 +1,5 @@
+package models.chatamu;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -10,7 +12,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * Serveur ChatamuCentral
+ * Serveur models.chatamu.ChatamuCentral
  */
 class ChatamuCentral {
 
@@ -103,7 +105,7 @@ class ChatamuCentral {
                 serverLogin = "#" + serverPort;
                 //Initialisation du salon central du serveur
                 serverFair = "";
-                //Récupération de l'instance de la classe ChatFunctions
+                //Récupération de l'instance de la classe models.chatamu.ChatFunctions
                 chatFunctions = ChatFunctions.getInstance();
                 //Instanciation du serveur
                 chatamu = new ChatamuCentral();
@@ -114,7 +116,7 @@ class ChatamuCentral {
             }
         } else {
             //Message d'usage de la commande
-            System.out.println("Utilisation: java ChatamuCentral port");
+            System.out.println("Utilisation: java models.chatamu.ChatamuCentral port");
         }
     }
 
@@ -123,7 +125,7 @@ class ChatamuCentral {
      * @param port port du serveur
      */
     private void demarrer(int port) {
-        System.out.println("# Démarrage du serveur ChatamuCentral sur le port " + port);
+        System.out.println("# Démarrage du serveur models.chatamu.ChatamuCentral sur le port " + port);
         try {
             //Initialisation de la liste des pseudos pour le serveur
             clientsUsernames.put(serverPort, new HashSet<>());
@@ -675,7 +677,7 @@ class ChatamuCentral {
                     case "EXIT":
                         //Retourne vrai pour sortir de la boucle
                         return true;
-                    //Client se reconnectant au serveur
+                    //models.chatamu.Client se reconnectant au serveur
                     case "RECONNECT\b":
                         reconnectOperation(argument);
                         break;
@@ -726,7 +728,7 @@ class ChatamuCentral {
         }
 
         /**
-         * Client souhaite envoyer un message
+         * models.chatamu.Client souhaite envoyer un message
          * @param message message à envoyer
          */
         private void sendMessageOperation(String message) {
@@ -858,7 +860,7 @@ class ChatamuCentral {
             fairLocation = argument.substring(0, argument.indexOf('@'));
             //Récupération du pseudo dans le message
             socketUsername = argument.substring(argument.indexOf('@')+1);
-            sendMessage("# Migration vers le serveur ChatamuCentral connecté au port " + serverPort);
+            sendMessage("# Migration vers le serveur models.chatamu.ChatamuCentral connecté au port " + serverPort);
             //Affichage d'un message sur le serveur
             System.out.println("# Reconnexion de " + socketUsername + " sur le serveur");
         }
