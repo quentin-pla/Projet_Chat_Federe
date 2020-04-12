@@ -1,5 +1,7 @@
 package models.chatamu;
 
+import com.sun.tools.javac.util.ArrayUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -14,7 +16,7 @@ import java.util.concurrent.Executors;
 /**
  * Serveur models.chatamu.ChatamuCentral
  */
-class ChatamuCentral {
+public class ChatamuCentral {
 
     //*************ATTRIBUTS STATIQUES******************//
 
@@ -83,7 +85,23 @@ class ChatamuCentral {
     /**
      * Activation/Désactivation mode debugage
      */
-    private final boolean debugMode = true;
+    private final boolean debugMode = false;
+
+    /**
+     * Constructeur
+     * @param port port
+     */
+    public ChatamuCentral(int port) {
+        //Initialisation variable port serveur
+        serverPort = port;
+        //Initialisation variable pseudo serveur
+        serverLogin = "#" + serverPort;
+        //Initialisation du salon central du serveur
+        serverFair = "";
+        //Récupération de l'instance de la classe models.chatamu.ChatFunctions
+        chatFunctions = ChatFunctions.getInstance();
+        demarrer(serverPort);
+    }
 
     /**
      * Main
@@ -92,28 +110,12 @@ class ChatamuCentral {
     public static void main(String[] args) {
         //Nombre d'arguments passés en paramètres
         int argc = args.length;
-        //Serveur chatamucentral
-        ChatamuCentral chatamu;
         //Port passé en paramètre
         String port = args[0];
         //Vérification nombre d'arguments et syntaxe port
         if (argc == 1 && port.matches("[0-9]+")) {
-            try {
-                //Initialisation variable port serveur
-                serverPort = Integer.parseInt(args[0]);
-                //Initialisation variable pseudo serveur
-                serverLogin = "#" + serverPort;
-                //Initialisation du salon central du serveur
-                serverFair = "";
-                //Récupération de l'instance de la classe models.chatamu.ChatFunctions
-                chatFunctions = ChatFunctions.getInstance();
-                //Instanciation du serveur
-                chatamu = new ChatamuCentral();
-                //Démarrage du serveur sur le port souhaité
-                chatamu.demarrer(serverPort);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            //Instanciation d'un nouveau serveur
+            new ChatamuCentral(Integer.parseInt(port));
         } else {
             //Message d'usage de la commande
             System.out.println("Utilisation: java models.chatamu.ChatamuCentral port");
@@ -708,7 +710,7 @@ class ChatamuCentral {
                     //Afficher les salons ouverts
                     case "LIST":
                         //Renvoi la liste des salons ouverts au client
-                        sendMessage(getAvailableFairs().toString());
+                        sendMessage("LISTFAIRS " + getAvailableFairs().toString());
                         break;
                     //Demande de connexion à un salon
                     case "JOIN":
@@ -720,7 +722,8 @@ class ChatamuCentral {
                         break;
                     default:
                         //Notification d'erreur
-                        sendMessage("# ERROR chatamu.");
+                        sendMessage("# ERROR chatamu");
+                        sendMessage("[ERROR CHATAMU]");
                         break;
                 }
             //Retourne faux pour ne pas stopper la connexion au serveur
@@ -743,14 +746,18 @@ class ChatamuCentral {
         private void createFairOperation(String fair) {
             //Vérification de la syntaxe du nom du salon
             if (isSyntaxValid(fair)) {
-                //Ajout du salon dans la liste de ceux du serveur
-                clientsFairs.get(serverPort).add(fair);
-                //Notification de création du salon
-                broadcast(serverFair, serverLogin, "# Création du salon : " + fair + " (par " + socketUsername + ")", true);
-                //Envoi de la liste des salons du serveur aux autres serveurs
-                broadcastFairs();
+                if (!isFairExisting(fair)) {
+                    sendMessage("[SUCCESS]");
+                    //Ajout du salon dans la liste de ceux du serveur
+                    clientsFairs.get(serverPort).add(fair);
+                    //Notification de création du salon
+                    broadcast(serverFair, serverLogin, "# Création du salon : " + fair + " (par " + socketUsername + ")", true);
+                    //Envoi de la liste des salons du serveur aux autres serveurs
+                    broadcastFairs();
+                }
+                else sendMessage("[FAIR ALREADY CREATED]");
             }
-            else sendMessage("# Nom de salon invalide, veuillez réessayer");
+            else sendMessage("[INVALID FAIR NAME]");
         }
 
         /**
@@ -760,14 +767,18 @@ class ChatamuCentral {
         private void joinFairOperation(String fair) {
             //Vérification si le salon existe
             if (isFairExisting(fair)) {
-                //Récupération du nom du salon et mise à jour de l'emplacement du client
-                fairLocation = fair;
-                //Envoi du salon au client
-                sendMessage("FAIR [" + fair + "]");
-                //Notification de connexion au salon
-                broadcast(serverFair, serverLogin, "# Connexion de " + socketUsername + " au salon : " + fair, true);
+                if (!fairLocation.equals(fair)) {
+                    sendMessage("[SUCCESS]");
+                    //Récupération du nom du salon et mise à jour de l'emplacement du client
+                    fairLocation = fair;
+                    //Envoi du salon au client
+                    sendMessage("FAIR [" + fair + "]");
+                    //Notification de connexion au salon
+                    broadcast(serverFair, serverLogin, "# Connexion de " + socketUsername + " au salon : " + fair, true);
+                }
+                else sendMessage("[SAME FAIR LOCATION]");
             }
-            else sendMessage("# Salon introuvable");
+            else sendMessage("[FAIR NOT FOUND]");
         }
 
         /**
@@ -777,6 +788,7 @@ class ChatamuCentral {
         private void quitFairOperation(String fair) {
             //Vérification si le salon existe
             if (isFairExisting(fair) && fairLocation.equals(fair)) {
+                sendMessage("[SUCCESS]");
                 //Récupération du nom du salon et mise à jour de l'emplacement du client
                 fairLocation = serverFair;
                 //Envoi du salon central au client
@@ -784,7 +796,7 @@ class ChatamuCentral {
                 //Notification de connexion au salon
                 broadcast(serverFair, serverLogin, "# Déconnexion de " + socketUsername + " du salon : " + fair, true);
             }
-            else sendMessage("# Salon introuvable");
+            else sendMessage("[FAIR NOT FOUND]");
         }
 
         /**
@@ -876,6 +888,8 @@ class ChatamuCentral {
             if (isSyntaxValid(socketUsername)) {
                 //Si le pseudo est disponible
                 if (isPseudoAvailable(socketUsername)) {
+                    //Envoi d'un message de succès
+                    sendMessage("[SUCCESS]");
                     //Ajout du pseudo à la liste des pseudos utilisés
                     clientsUsernames.get(serverPort).add(socketUsername);
                     //Notification de connexion du client au serveur
@@ -892,11 +906,11 @@ class ChatamuCentral {
                     broadcastUsernames();
                 } else {
                     socketUsername = null;
-                    sendMessage("# Pseudo déjà utilisé sur le serveur, veuillez réessayer.");
+                    sendMessage("[USERNAME ALREADY USED]");
                 }
             } else {
                 socketUsername = null;
-                sendMessage("# Pseudo invalide, seuls les caractères de l'alphabet sont acceptés (3 caractères minimum).");
+                sendMessage("[USERNAME INVALID]");
             }
         }
 

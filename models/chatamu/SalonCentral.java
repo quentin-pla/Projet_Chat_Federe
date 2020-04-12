@@ -12,7 +12,7 @@ import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-class SalonCentral {
+public class SalonCentral {
 
     private static Selector selector;
     private static ServerSocketChannel ssc;

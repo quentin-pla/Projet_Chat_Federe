@@ -41,11 +41,6 @@ public class Client {
     private SocketChannel socket;
 
     /**
-     * Executeur
-     */
-    private Executor executor;
-
-    /**
      * Entrée clavier
      */
     private BufferedReader stdin;
@@ -56,9 +51,9 @@ public class Client {
     private HashSet<Integer> availableServerPorts;
 
     /**
-     * Autorisation d'utiliser le clavier
+     * Utiliser le client depuis le terminal
      */
-    private boolean allowInput;
+    private static boolean fromTerminal;
 
     /**
      * Singleton contenant des méthodes pour le chat
@@ -71,15 +66,24 @@ public class Client {
     private PriorityQueue<String> messagesToAnalyze = new PriorityQueue<>();
 
     /**
+     * Sortie sur laquelle les messages sont affichés
+     */
+    private PrintStream output = System.out;
+
+    /**
      * Activation/Désactivation mode debugage
      */
-    private final boolean debugMode = true;
+    private final boolean debugMode = false;
+
+    private ServerMessageReceiver serverMessageReceiver;
+
+    private KeyboardInput keyboardInput;
 
     /**
      * Main
      * @param args arguments
      */
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         //Vérification des arguments
         if (args.length != 2) {
             //Arguments invalides
@@ -87,17 +91,14 @@ public class Client {
             //Fin du programme
             System.exit(1);
         }
-
         //Adresse IP du serveur
         String ip = args[0];
         //Port TCP serveur
-        int port = Integer.parseInt(args[1]);
-
+        String port = args[1];
+        //Utilisation du client depuis le terminal
+        fromTerminal = true;
         //Instanciation d'un client
-        new Client(ip, port);
-
-        //Message instruction
-        System.out.println("# Pour vous connecter au serveur entrez la commande : LOGIN pseudo");
+        new Client(ip, port, null);
     }
 
     /**
@@ -105,13 +106,19 @@ public class Client {
      * @param ip ip du serveur
      * @param port port du serveur
      */
-    public Client(String ip, int port) throws IOException {
+    public Client(String ip, String port, PrintStream output) {
+        //Définition de la sortie des messages (par défaut System.out)
+        if (output != null) this.output = output;
         //Initialisation de l'adresse ip du serveur
         this.ip = ip;
-        //Initialisation du port du serveur
-        this.port = port;
-        //Initialisation du client
-        init();
+        //Si le port contient que des chiffres
+        if (port.matches("[0-9]+")) {
+            //Initialisation du port du serveur
+            this.port = Integer.parseInt(port);
+            //Initialisation du client
+            init();
+        }
+        else this.output.println("[ERROR PORT]");
     }
 
     /**
@@ -120,32 +127,97 @@ public class Client {
     public void init() {
         //Connexion au serveur
         try {
-            //Récupération de l'instance de la classe models.chatamu.ChatFunctions
-            chatFunctions = ChatFunctions.getInstance();
-            //Initialisation de l'executeur
-            executor = Executors.newFixedThreadPool(2);
-            //Récupération de la saisie clavier
-            stdin = new BufferedReader(new InputStreamReader(System.in));
-            //Initialisation de la liste des serveurs disponibles
-            availableServerPorts = new HashSet<>();
             //Ouverture d'un canal du socket
             socket = SocketChannel.open();
             //Connexion du socket à l'adresse ip et au port passés en paramètre
             socket.connect(new InetSocketAddress(ip, port));
+            //Message succès
+            printSuccess();
         } catch (IOException e) {
             //Message d'erreur
-            System.err.println("# Connexion impossible");
-            e.printStackTrace();
+            printError("[CONNECTION REFUSED]");
+            //Suite du code ignorée
+            return;
         }
+        //Récupération de l'instance de la classe models.chatamu.ChatFunctions
+        chatFunctions = ChatFunctions.getInstance();
 
-        //Accès clavier activé
-        allowInput = true;
+        //Initialisation de l'executeur
+        Executor executor = Executors.newFixedThreadPool((fromTerminal) ? 2 : 1);
+        //Initialisation de la liste des serveurs disponibles
+        availableServerPorts = new HashSet<>();
 
         //Instanciation d'un thread gérant les messages reçus du server
-        executor.execute(new ServerMessageReceiver());
+        executor.execute(serverMessageReceiver = new ServerMessageReceiver());
 
-        //Instanciation d'un thread gérant la saisie clavier du client
-        executor.execute(new KeyboardInput());
+        //Si on souhaite utiliser la saisie clavier
+        if (fromTerminal) {
+            //Récupération de la saisie clavier
+            stdin = new BufferedReader(new InputStreamReader(System.in));
+            //Instanciation d'un thread gérant la saisie clavier du client
+            executor.execute(keyboardInput = new KeyboardInput());
+        }
+    }
+
+    /**
+     * Écrire dans la sortie console un message de succès/erreur
+     * @param message message d'erreur
+     */
+    private void printError(String message) {
+        switch (message) {
+            //"# Port invalide, veuillez réessayer" : "[ERROR PORT]"
+            case "[ERROR PORT]":
+                if (fromTerminal) message = "# Port invalide, veuillez réessayer";
+                break;
+            case "[CONNECTION REFUSED]":
+                if (fromTerminal) message = "# Connexion refusée";
+                break;
+            case "[FAIL RECONNECT]":
+                if (fromTerminal) message = "# Reconnexion impossible";
+                break;
+            case "[SOCKET WRITE FAILED]":
+                if (fromTerminal) message = "# Écriture sur le serveur impossible";
+                break;
+            case "[DISCONNECT]":
+                if (fromTerminal) message = "# Déconnexion du serveur";
+                break;
+            case "[CONNECTION LOST]":
+                if (fromTerminal) message = "# Connexion au serveur perdue";
+                break;
+            case "[USERNAME ALREADY USED]":
+                if (fromTerminal) message = "# Pseudo déjà utilisé sur le serveur, veuillez réessayer.";
+                break;
+            case "[USERNAME INVALID]":
+                if (fromTerminal) message = "# Pseudo invalide, seuls les caractères de l'alphabet sont acceptés (3 caractères minimum).";
+                break;
+            case "[FAIR NOT FOUND]":
+                if (fromTerminal) message = "# Salon introuvable";
+                break;
+            case "[INVALID FAIR NAME]":
+                if (fromTerminal) message = "# Nom de salon invalide, veuillez réessayer";
+                break;
+            case "[FAIR ALREADY CREATED]":
+                if (fromTerminal) message = "# Nom de salon déjà utilisé, veuillez réessayer";
+                break;
+            case "[SAME FAIR LOCATION]":
+                if (fromTerminal) message = "# Vous vous situez déjà dans le salon";
+                break;
+            case "[ERROR CHATAMU]":
+                if (fromTerminal) message = "# ERROR chatamu";
+                break;
+            default:
+                message = null;
+                break;
+        }
+        //Affichage du message
+        if (message != null) output.println(message);
+    }
+
+    /**
+     * Renvoi
+     */
+    private void printSuccess() {
+        if (!fromTerminal) output.println("[SUCCESS]");
     }
 
     /**
@@ -164,23 +236,80 @@ public class Client {
                 String message = chatFunctions.secure("RECONNECT " + fair + "@" + pseudo);
                 //Écriture du message dans le serveur pour se connecter
                 socket.write(ByteBuffer.wrap((message+"\n").getBytes()));
+                printSuccess();
             } catch (IOException e) {
-                e.printStackTrace();
+                //Message d'erreur
+                printError("[FAIL RECONNECT]");
             }
         }
+    }
+
+    /**
+     * Envoyer un message au serveur
+     * @param message message à envoyer
+     */
+    public void writeToSocket(String message) {
+        try {
+            socket.write(ByteBuffer.wrap((message + "\n").getBytes()));
+        } catch (IOException e) {
+            printError("[SOCKET WRITE FAILED]");
+        }
+    }
+
+    /**
+     * Récupérer le salon dans lequel est situé le client
+     */
+    public String getFair() {
+        return fair;
+    }
+
+    /**
+     * Récupérer le pseudo du client
+     */
+    public String getPseudo() {
+        return pseudo;
+    }
+
+    /**
+     * Déconnecter le client du serveur
+     */
+    public void disconnect() {
+        try {
+            //Terminer l'exécution du thread gérant la réception des messages serveur
+            serverMessageReceiver.terminate();
+            //Si le client est exécuté depuis le terminal
+            if (fromTerminal) {
+                //Terminer l'exécution de la saisie clavier
+                keyboardInput.terminate();
+                //Fermeture de l'entrée clavier
+                stdin.close();
+            }
+            //Fermeture du socket
+            socket.close();
+            //Fermeture de l'application
+            System.exit(0);
+        } catch (IOException ignored) {}
     }
 
     /**
      * Thread gérant les messages reçus depuis le serveur
      */
     public class ServerMessageReceiver implements Runnable {
+        //Variable pour définir si le thread fonctionne ou pas
+        private volatile boolean running = true;
+
+        //Terminer l'exécution du thread
+        public void terminate() {
+            this.running = false;
+        }
+
         @Override
         public void run() {
             try {
                 //Instanciation d'un buffer de bytes de taille 128
                 ByteBuffer buffer = ByteBuffer.allocate(128);
                 //Tant qu'il est possible de lire depuis le socket
-                while (socket.read(buffer) != -1) {
+                while (running && socket.read(buffer) != -1) {
                     //Récupération du message
                     String message = chatFunctions.extractMessage(buffer);
                     //Message non vide
@@ -212,15 +341,16 @@ public class Client {
                 }
                 //S'il n'y a plus de serveur ouvert
                 if (availableServerPorts.size() == 0) {
-                    //Désactivation de l'accès clavier
-                    allowInput = false;
+                    //Déconnexion du client
+                    disconnect();
                     //Notification de déconnexion
-                    System.out.println("# Déconnexion du serveur");
+                    printError("[DISCONNECT]");
                 }
                 //Reconnexion au serveur
                 else reconnectToServer();
             } catch (IOException e) {
-                e.printStackTrace();
+                //Message d'erreur
+                printError("[CONNECTION LOST]");
             }
         }
 
@@ -230,11 +360,11 @@ public class Client {
          */
         private void analyseMessage(String message) {
             //Variable contenant l'opération à effectuer
-            String operation = "";
+            String operation = message;
             //Variable contenant l'argument passé en paramètre
             String argument = "";
             //Opération de mise à jour
-            if (!message.contains("@") && message.contains("[") && message.contains("]")) {
+            if (!message.startsWith("[") && !message.contains(">") && message.contains("[") && message.endsWith("]")) {
                 //Récupération de l'opération
                 operation = message.substring(0, message.indexOf(" "));
                 //Récupération du paramètre
@@ -259,6 +389,17 @@ public class Client {
                         availableServerPorts.clear();
                     }
                     break;
+                case "LISTFAIRS":
+                    //On vérifie qu'il y a des salons dans la liste
+                    if (argument.length() > 0) {
+                        //Affichage des salons disponibles
+                        if (fromTerminal) output.println("# Salons disponibles: " + argument);
+                        else output.println(message);
+                    }
+                    else
+                        //Affichage du message en sortie
+                        if (fromTerminal) output.println("# Il n'y a pas de salons disponibles");
+                    break;
                 //Initialisation du pseudo au client
                 case "PSEUDO":
                     pseudo = argument;
@@ -267,11 +408,25 @@ public class Client {
                 case "FAIR":
                     fair = argument;
                     break;
+                //Messages d'erreur
+                case "[USERNAME ALREADY USED]":
+                case "[USERNAME INVALID]":
+                case "[FAIR NOT FOUND]":
+                case "[INVALID FAIR NAME]":
+                case "[FAIR ALREADY CREATED]":
+                case "[SAME FAIR LOCATION]":
+                case "[ERROR CHATAMU]":
+                    printError(operation);
+                    break;
+                case "[SUCCESS]":
+                    printSuccess();
+                    break;
                 default:
-                    //Effacement du contenu affiché sur la dernière ligne
-                    System.out.print("\033[2K");
+                    if (fromTerminal)
+                        //Effacement du contenu affiché sur la dernière ligne
+                        output.print("\033[2K");
                     //Affichage du message
-                    System.out.println(message);
+                    output.println(message);
                     break;
             }
         }
@@ -281,13 +436,21 @@ public class Client {
      * Thread gérant l'entrée clavier
      */
     public class KeyboardInput implements Runnable {
+        //Variable pour définir si le thread fonctionne ou pas
+        private volatile boolean running = true;
+
+        //Terminer l'exécution du thread
+        public void terminate() {
+            this.running = false;
+        }
+
         @Override
         public void run() {
             try {
                 //Instanciation d'un buffer de bytes
                 ByteBuffer buffer = ByteBuffer.allocate(128);
                 //Tant qu'il est autorisé d'utiliser le clavier
-                while (allowInput) {
+                while (running) {
                     //Récupération du message au clavier
                     String message = stdin.readLine();
                     //Envoi du message
@@ -301,11 +464,6 @@ public class Client {
                     //Si écriture impossible sortie de la boucle
                     if (checkWrite == -1) break;
                 }
-                //Fermeture du socket
-                socket.close();
-                //Fermeture de l'entrée clavier
-                stdin.close();
-                System.exit(0);
             } catch (IOException e) {
                 e.printStackTrace();
             }
