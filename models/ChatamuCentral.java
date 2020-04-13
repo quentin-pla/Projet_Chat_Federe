@@ -1,6 +1,4 @@
-package models.chatamu;
-
-import com.sun.tools.javac.util.ArrayUtils;
+package models;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,7 +12,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * Serveur models.chatamu.ChatamuCentral
+ * Serveur ChatamuCentral
  */
 public class ChatamuCentral {
 
@@ -118,7 +116,7 @@ public class ChatamuCentral {
             new ChatamuCentral(Integer.parseInt(port));
         } else {
             //Message d'usage de la commande
-            System.out.println("Utilisation: java models.chatamu.ChatamuCentral port");
+            System.out.println("Utilisation: java ChatamuCentral port");
         }
     }
 
@@ -127,7 +125,7 @@ public class ChatamuCentral {
      * @param port port du serveur
      */
     private void demarrer(int port) {
-        System.out.println("# Démarrage du serveur models.chatamu.ChatamuCentral sur le port " + port);
+        System.out.println("# Démarrage du serveur ChatamuCentral sur le port " + port);
         try {
             //Initialisation de la liste des pseudos pour le serveur
             clientsUsernames.put(serverPort, new HashSet<>());
@@ -246,7 +244,7 @@ public class ChatamuCentral {
         //Si on souhaite afficher le message et que le salon est celui du serveur
         if (printOut && fair.equals(serverFair)) {
             //Suppression du @ en début de message s'il provient d'un client
-            if (!author.startsWith("#")) message = message.substring(1);
+            if (!message.startsWith("#")) message = message.substring(1);
             //Affichage du message
             System.out.println(message);
         }
@@ -751,7 +749,7 @@ public class ChatamuCentral {
                     //Ajout du salon dans la liste de ceux du serveur
                     clientsFairs.get(serverPort).add(fair);
                     //Notification de création du salon
-                    broadcast(serverFair, serverLogin, "# Création du salon : " + fair + " (par " + socketUsername + ")", true);
+                    broadcast(serverFair, socketUsername, "# Création du salon " + fair + " (par " + socketUsername + ")", true);
                     //Envoi de la liste des salons du serveur aux autres serveurs
                     broadcastFairs();
                 }
@@ -774,7 +772,7 @@ public class ChatamuCentral {
                     //Envoi du salon au client
                     sendMessage("FAIR [" + fair + "]");
                     //Notification de connexion au salon
-                    broadcast(serverFair, serverLogin, "# Connexion de " + socketUsername + " au salon : " + fair, true);
+                    broadcast(serverFair, socketUsername, "# Connexion de " + socketUsername + " au salon " + fair, true);
                 }
                 else sendMessage("[SAME FAIR LOCATION]");
             }
@@ -794,7 +792,7 @@ public class ChatamuCentral {
                 //Envoi du salon central au client
                 sendMessage("FAIR [" + serverFair + "]");
                 //Notification de connexion au salon
-                broadcast(serverFair, serverLogin, "# Déconnexion de " + socketUsername + " du salon : " + fair, true);
+                broadcast(serverFair, socketUsername, "# Déconnexion de " + socketUsername + " du salon " + fair, true);
             }
             else sendMessage("[FAIR NOT FOUND]");
         }
@@ -820,13 +818,12 @@ public class ChatamuCentral {
          */
         private void updateUsernamesOperation(String usernames) {
             //On vérifie qu'il y a des pseudos dans la liste
-            if (usernames.length() > 0) {
+            if (usernames.length() > 0)
                 //Ajout des pseudos du serveur dans la liste
                 clientsUsernames.put(socketPort, extractListFromString(usernames));
-            } else {
+            else
                 //Suppression des éléments de la map pour le port
                 clientsUsernames.remove(socketPort);
-            }
         }
 
         /**
@@ -835,13 +832,12 @@ public class ChatamuCentral {
          */
         private void updateFairsOperation(String fairs) {
             //On vérifie qu'il y a des messages dans la liste
-            if (fairs.length() > 0) {
+            if (fairs.length() > 0)
                 //Ajout des salons du serveur dans la liste
                 clientsFairs.put(socketPort, extractListFromString(fairs));
-            } else {
+            else
                 //Suppression des éléments de la map pour le port
                 clientsFairs.remove(socketPort);
-            }
         }
 
         /**
@@ -872,7 +868,7 @@ public class ChatamuCentral {
             fairLocation = argument.substring(0, argument.indexOf('@'));
             //Récupération du pseudo dans le message
             socketUsername = argument.substring(argument.indexOf('@')+1);
-            sendMessage("# Migration vers le serveur models.chatamu.ChatamuCentral connecté au port " + serverPort);
+            sendMessage("# Migration vers le serveur ChatamuCentral connecté au port " + serverPort);
             //Affichage d'un message sur le serveur
             System.out.println("# Reconnexion de " + socketUsername + " sur le serveur");
         }
@@ -893,13 +889,11 @@ public class ChatamuCentral {
                     //Ajout du pseudo à la liste des pseudos utilisés
                     clientsUsernames.get(serverPort).add(socketUsername);
                     //Notification de connexion du client au serveur
-                    broadcast(serverFair, serverLogin, "# Connexion de " + socketUsername + " au serveur", true);
+                    broadcast(serverFair, socketUsername, "# Connexion de " + socketUsername + " au serveur", true);
                     //Envoi du pseudo au client
                     sendMessage("PSEUDO [" + socketUsername + "]");
                     //Envoi du salon du serveur au client
                     sendMessage("FAIR [" + serverFair + "]");
-                    //Envoi message instruction au client
-                    sendMessage("# Pour envoyer un message saisir la commande : MESSAGE message");
                     //Envoi des serveurs disponibles en cas de perte de connexion au client
                     broadcastServerLinks();
                     //Mise à jour des pseudos utilisés entre serveurs

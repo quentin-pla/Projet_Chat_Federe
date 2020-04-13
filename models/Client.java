@@ -1,4 +1,4 @@
-package models.chatamu;
+package models;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -11,7 +11,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * models.chatamu.Client serveur
+ * Client serveur
  */
 public class Client {
 
@@ -161,56 +161,13 @@ public class Client {
 
     /**
      * Écrire dans la sortie console un message de succès/erreur
-     * @param message message d'erreur
+     * @param result message d'erreur
      */
-    private void printError(String message) {
-        switch (message) {
-            //"# Port invalide, veuillez réessayer" : "[ERROR PORT]"
-            case "[ERROR PORT]":
-                if (fromTerminal) message = "# Port invalide, veuillez réessayer";
-                break;
-            case "[CONNECTION REFUSED]":
-                if (fromTerminal) message = "# Connexion refusée";
-                break;
-            case "[FAIL RECONNECT]":
-                if (fromTerminal) message = "# Reconnexion impossible";
-                break;
-            case "[SOCKET WRITE FAILED]":
-                if (fromTerminal) message = "# Écriture sur le serveur impossible";
-                break;
-            case "[DISCONNECT]":
-                if (fromTerminal) message = "# Déconnexion du serveur";
-                break;
-            case "[CONNECTION LOST]":
-                if (fromTerminal) message = "# Connexion au serveur perdue";
-                break;
-            case "[USERNAME ALREADY USED]":
-                if (fromTerminal) message = "# Pseudo déjà utilisé sur le serveur, veuillez réessayer.";
-                break;
-            case "[USERNAME INVALID]":
-                if (fromTerminal) message = "# Pseudo invalide, seuls les caractères de l'alphabet sont acceptés (3 caractères minimum).";
-                break;
-            case "[FAIR NOT FOUND]":
-                if (fromTerminal) message = "# Salon introuvable";
-                break;
-            case "[INVALID FAIR NAME]":
-                if (fromTerminal) message = "# Nom de salon invalide, veuillez réessayer";
-                break;
-            case "[FAIR ALREADY CREATED]":
-                if (fromTerminal) message = "# Nom de salon déjà utilisé, veuillez réessayer";
-                break;
-            case "[SAME FAIR LOCATION]":
-                if (fromTerminal) message = "# Vous vous situez déjà dans le salon";
-                break;
-            case "[ERROR CHATAMU]":
-                if (fromTerminal) message = "# ERROR chatamu";
-                break;
-            default:
-                message = null;
-                break;
-        }
+    private void printError(String result) {
+        //Si le client est lancé depuis un terminal
+        if (fromTerminal) result = "# " + chatFunctions.traductResult(result);
         //Affichage du message
-        if (message != null) output.println(message);
+        if (result != null) output.println(result);
     }
 
     /**
@@ -276,7 +233,7 @@ public class Client {
     public void disconnect() {
         try {
             //Terminer l'exécution du thread gérant la réception des messages serveur
-            serverMessageReceiver.terminate();
+            if (serverMessageReceiver != null) serverMessageReceiver.terminate();
             //Si le client est exécuté depuis le terminal
             if (fromTerminal) {
                 //Terminer l'exécution de la saisie clavier

@@ -1,26 +1,35 @@
 package controllers;
 
+import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Pane;
+import javafx.scene.paint.Color;
 import javafx.stage.Stage;
-import models.chatamu.Client;
+import models.ChatFunctions;
+import models.Client;
 import views.ChatPanel;
 import views.ConnectPanel;
 import views.LoginPanel;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.PriorityQueue;
 import java.util.concurrent.TimeUnit;
+
+import static com.sun.javafx.scene.control.skin.Utils.getResource;
 
 public class ClientController {
     /**
      * Client utilisé par le controleur
      */
     private Client client;
+
+    /**
+     * Classe contenant des méthodes pour le chat
+     */
+    private ChatFunctions chatFunctions = ChatFunctions.getInstance();
 
     /**
      *
@@ -65,17 +74,14 @@ public class ClientController {
     /**
      * Salons disponibles avec les messages qu'ils contiennent
      */
-    private HashMap<String, ArrayList<String>> fairsMessages = new HashMap<>();
-
-    /**
-     * Messages serveur & clients
-     */
-    private PriorityQueue<String> outMessages = new PriorityQueue<>();
+    private HashMap<String, HashMap<String, Color>> fairsMessages = new HashMap<>();
 
     /**
      * Messages retour après une opération
      */
     private PriorityQueue<String> outResults = new PriorityQueue<>();
+
+    private Color serverMessagesColor = Color.BLUE;
 
     /**
      * Constructeur
@@ -131,13 +137,17 @@ public class ClientController {
         connectPanel.getConnect().setOnAction(e -> {
             //Initialisation du client
             client = new Client(connectPanel.getIpText(), connectPanel.getPortText(), output);
+            //Récupération du résultat
+            String result = getLastResult();
             //Message de retour succès
-            if (isSuccess(getLastResult())) {
+            if (isSuccess(result)) {
                 //Affichage de la fenêtre d'authentification
                 setWindow(loginPanel);
                 //Initialisation de l'authentification
                 initAuthentification();
             }
+            //Affichage d'un message d'erreur
+            else connectPanel.showError(chatFunctions.traductResult(result));
         });
     }
 
@@ -149,13 +159,17 @@ public class ClientController {
         loginPanel.getConnect().setOnAction(e -> {
             //Demande d'authentification sur le serveur avec le pseudo choisit
             client.writeToSocket("LOGIN " + loginPanel.getUsernameText());
+            //Récupération du résultat
+            String result = getLastResult();
             //Message de retour succès
-            if (isSuccess(getLastResult())) {
+            if (isSuccess(result)) {
                 //Affichage de la fenêtre de chat
                 setWindow(chatPanel);
                 //Initialisation du chat
                 initChat();
             }
+            //Affichage d'un message d'erreur
+            else loginPanel.showError(chatFunctions.traductResult(result));
         });
     }
 
@@ -167,9 +181,9 @@ public class ClientController {
         //Demande de récupération des salons présents dans le serveur
         client.writeToSocket("LIST");
         //Initialisation du salon central
-        fairsMessages.put("", new ArrayList<>());
+        fairsMessages.put("", new HashMap<>());
         //Ajout d'un message par défaut
-        addMessage("ChatamuCentral > Bienvenue sur le serveur !");
+        addMessage("Bienvenue sur le serveur !", serverMessagesColor);
         //Envoyer un message
         chatPanel.getMessageInput().setOnAction(e -> sendMessage(chatPanel.getInputText()));
         //Créer un nouveau salon
@@ -181,6 +195,8 @@ public class ClientController {
             //Connexion au salon
             joinFair(fairToJoin);
         });
+        //Rafraichir la liste des salons
+        chatPanel.getRefreshFairsButton().setOnAction(e -> client.writeToSocket("LIST"));
     }
 
     /**
@@ -190,7 +206,7 @@ public class ClientController {
     private String getLastResult() {
         try {
             //Pause dans le programme de 50ms
-            TimeUnit.MILLISECONDS.sleep(50);
+            TimeUnit.MILLISECONDS.sleep(20);
         } catch (InterruptedException ignored) {}
         //Retour du premier résultat trouvé dans la liste
         return (outResults.peek() != null) ? outResults.poll() : getLastResult();
@@ -198,8 +214,8 @@ public class ClientController {
 
     /**
      * Vérifie que le résultat est un succès
-     * @param result
-     * @return
+     * @param result résultat
+     * @return booléen
      */
     private boolean isSuccess(String result) {
         //Retourne vrai si le résultat n'est pas une erreur
@@ -208,7 +224,7 @@ public class ClientController {
 
     /**
      * Envoyer un message
-     * @param message
+     * @param message message
      */
     private void sendMessage(String message) {
         //Si la taille du message est supérieur à 0
@@ -216,24 +232,28 @@ public class ClientController {
             //Envoi d'un message au serveur
             client.writeToSocket("MESSAGE " + message);
             //Ajout du message
-            addMessage(client.getPseudo() + " > " + message);
+            addMessage(client.getPseudo() + " > " + message, null);
         }
     }
 
     /**
      * Créer un nouveau salon
-     * @param fair
+     * @param fair salon
      */
     private void createNewFair(String fair) {
         //Envoi d'un message au serveur
         client.writeToSocket("SALON " + fair);
+        //Résultat
+        String result = getLastResult();
         //Message retour succès
-        if (isSuccess(getLastResult())) {
+        if (isSuccess(result)) {
             //Ajout du salon dans la liste des salons
-            fairsMessages.put(fair, new ArrayList<>());
+            fairsMessages.put(fair, new HashMap<>());
             //Ajout du salon dans l'interface
             chatPanel.addFair(fair);
         }
+        //Affichage de l'erreur
+        else chatPanel.showError(chatFunctions.traductResult(result));
     }
 
     /**
@@ -253,10 +273,17 @@ public class ClientController {
             else
                 //Demande pour rejoindre le salon
                 client.writeToSocket("JOIN " + fair);
+            //Récupération du résultat
+            String result = getLastResult();
             //Message retour succès
-            if (isSuccess(getLastResult()))
+            if (isSuccess(result)) {
+                //Récupération des messages du salon
+                HashMap<String, Color> messages = fairsMessages.get(fair);
                 //Affichage des messages du salon dans l'interface
-                chatPanel.showMessages(fairsMessages.get(fair));
+                Platform.runLater(() -> chatPanel.showMessages(messages));
+            }
+            //Affichage de l'erreur
+            else chatPanel.showError(result);
         }
     }
 
@@ -264,26 +291,36 @@ public class ClientController {
      * Afficher un nouveau message dans la liste
      * @param message message
      */
-    private void addMessage(String message) {
+    private void addMessage(String message, Color color) {
         //Récupération des messages du salon
-        ArrayList<String> messages = fairsMessages.get(client.getFair());
+        HashMap<String, Color> messages = fairsMessages.get(client.getFair());
         //Si la liste est initialisée
         if (messages != null)
             //Ajout du message à la liste
-            messages.add(message);
+            messages.put(message, color);
         else
             //Création d'une nouvelle liste de message pour le salon contenant le message
-            fairsMessages.put(client.getFair(), new ArrayList<String>(){{add(message);}});
+            fairsMessages.put(client.getFair(), new HashMap<String, Color>(){{
+                put(message, color);
+            }});
         //Affichage du message sur l'interface
-        chatPanel.addMessage(message);
+        Platform.runLater(() -> chatPanel.addMessage(message, color));
     }
+
 
     /**
      * Mettre à jour la liste des salons disponibles
-     * @param fairs
+     * @param fairs liste des salons
      */
-    private void updateFairsList(String fairs) {
-
+    private void updateFairsList(String[] fairs) {
+        //Ajout des ports dans la liste des ports déjà connectés
+        for (String fair : fairs) {
+            //Ajout du salon dans la liste des salons
+            fairsMessages.put(fair, new HashMap<>());
+            if (!chatPanel.getFairsList().getItems().contains(fair))
+                //Ajout du salon dans l'interface
+                Platform.runLater(() -> chatPanel.addFair(fair));
+        }
     }
 
     /**
@@ -302,7 +339,7 @@ public class ClientController {
      * @return fenêtre
      */
     public Scene getScene() {
-        //Récupération de la scène
+        //Retour de la scène
         return new Scene(windowContent, 500, 300);
     }
 
@@ -324,14 +361,19 @@ public class ClientController {
             while (running) {
                 //Récupération du message
                 message = bytes.toString().trim();
-                //Si le message n'est pas vide
-                if (message.length() > 0) {
-                    boolean isResult = message.startsWith("[")
+                //Message de type résultat
+                boolean isResult = message.startsWith("[")
                         && message.endsWith("]")
                         && !message.contains(">")
                         && message.length() > 2;
-                    boolean isClientMessage = !message.startsWith("#")
+                //Message provenant d'un client
+                boolean isClientMessage = !message.startsWith("#")
                         && message.contains(" > ");
+                //Message provenant du serveur
+                boolean isServerMessage = message.startsWith("# ");
+                boolean isListFairs = message.startsWith("LISTFAIRS ") && !message.contains(">");
+                //Si le message n'est pas vide
+                if (message.length() > 0) {
                     String[] messages;
                     //Si le message contient des retours à la ligne
                     if (message.contains("\n")) {
@@ -344,25 +386,26 @@ public class ClientController {
                     for (String element : messages)
                         //Si c'est un message de type résultat
                         if (isResult) {
-                            defaultOutput.println("RESULT = " + message);
                             //Ajout du message à la liste des résultats
                             outResults.add(element);
                         }
                         else {
-                            defaultOutput.println("MESSAGE = " + message);
-                            if (element.startsWith("LISTFAIRS ") && !element.contains(">")) {
+                            //Message contenant la liste des salons
+                            if (isListFairs) {
+                                //Récupération des salons
                                 element = element.substring(message.indexOf('[') + 1, message.lastIndexOf(']'));
+                                //Séparation des salons
                                 String[] fairs = element.split(", ");
-                                //Ajout des ports dans la liste des ports déjà connectés
-                                for (String fair : fairs) {
-                                    //Ajout du salon dans la liste des salons
-                                    fairsMessages.put(fair, new ArrayList<>());
-                                    //Ajout du salon dans l'interface
-                                    chatPanel.getFairsList().getItems().add(fair);
-                                }
+                                //Mise à jour
+                                updateFairsList(fairs);
                             }
+                            //Message client
                             else if (isClientMessage)
-                                addMessage(element);
+                                addMessage(element, null);
+                            else if (isServerMessage) {
+                                element = element.substring(2);
+                                addMessage(element, serverMessagesColor);
+                            }
                         }
                     //Réinitialisation du buffer de bytes contenant le message reçu
                     bytes.reset();

@@ -8,10 +8,10 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Text;
 import javafx.stage.Stage;
-
-import java.lang.reflect.Array;
-import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Page de chat
@@ -20,11 +20,12 @@ public class ChatPanel extends BorderPane {
     private ListView<String>    fairs = new ListView<>();
     private TextField    messageInput = new TextField();
     private TextField       fairInput = new TextField();
-    private ListView<String> messages = new ListView<>();
+    private ListView<Text>   messages = new ListView<>();
     private Button         createFair = new Button("Nouveau salon");
     private Button  confirmCreateFair = new Button("Valider");
     private Button       refreshFairs = new Button("Rafraichir");
     private Stage           fairStage = new Stage();
+    private Label    fairErrorMessage = new Label();
 
     /**
      * Constructeur
@@ -37,6 +38,8 @@ public class ChatPanel extends BorderPane {
     /****** Initialisation *******/
 
     private void init() {
+        //Ajout de l'id pour l'élément
+        this.setId("chatpanel");
         //Définition de la taille maximale de la fenêtre
         setMinSize(500, 300);
         //Initialisation de la liste des salons
@@ -90,6 +93,7 @@ public class ChatPanel extends BorderPane {
     }
 
     private void initRefreshFairsButton() {
+        refreshFairs.setId("refreshFairs");
         refreshFairs.setMinSize(100, 25);
         refreshFairs.setMaxSize(100, 25);
     }
@@ -104,18 +108,28 @@ public class ChatPanel extends BorderPane {
     private void initConfirmFairStage() {
         fairStage.setTitle("Nouveau salon");
         BorderPane pane = new BorderPane();
-        pane.setMinSize(200, 100);
-        pane.setMaxSize(200, 100);
+        pane.setMinSize(200, 125);
+        pane.setMaxSize(200, 125);
         fairInput.setMinSize(100, 25);
         fairInput.setMaxSize(100, 25);
         fairInput.setPromptText("Nom du salon");
+        fairInput.setStyle(
+            "-fx-border-color: #E1E1E1;" +
+            "-fx-border-radius: 3px;" +
+            "-fx-background-color: white;"
+        );
         confirmCreateFair.setMinSize(100, 25);
         confirmCreateFair.setMaxSize(100, 25);
         confirmCreateFair.setOnAction(e -> {
             fairStage.close();
             fairInput.clear();
         });
-        VBox content = new VBox(fairInput, confirmCreateFair);
+        confirmCreateFair.setStyle(
+            "-fx-background-color: #1D55A2;" +
+            "-fx-text-fill: white;"
+        );
+        fairErrorMessage.setTextFill(Color.RED);
+        VBox content = new VBox(fairInput, confirmCreateFair, fairErrorMessage);
         content.setAlignment(Pos.CENTER);
         content.setSpacing(5);
         pane.setCenter(content);
@@ -143,21 +157,33 @@ public class ChatPanel extends BorderPane {
 
     public ListView<String> getFairsList() { return fairs; }
 
+    public Button getRefreshFairsButton() { return refreshFairs; }
+
     /********* Méthodes publiques ***********/
 
     public void addFair(String fair) {
         fairs.getItems().add(fair);
-        fairInput.clear();
-        fairStage.close();
+        if (fairStage.isShowing()) {
+            fairInput.clear();
+            fairStage.close();
+        }
     }
 
-    public void addMessage(String message) {
-        messages.getItems().add(message);
+    public void addMessage(String message, Color color) {
+        Text text = new Text(message);
+        if (color != null)
+            text.setFill(color);
+        messages.getItems().add(text);
         messageInput.clear();
     }
 
-    public void showMessages(ArrayList<String> fairMessages) {
+    public void showMessages(HashMap<String, Color> fairMessages) {
         messages.getItems().clear();
-        messages.getItems().addAll(fairMessages);
+        for (String message : fairMessages.keySet())
+            addMessage(message, fairMessages.get(message));
+    }
+
+    public void showError(String message) {
+        fairErrorMessage.setText(message);
     }
 }

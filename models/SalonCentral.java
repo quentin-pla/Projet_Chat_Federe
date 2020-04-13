@@ -1,4 +1,4 @@
-package models.chatamu;
+package models;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;

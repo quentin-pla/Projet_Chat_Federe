@@ -1,4 +1,4 @@
-package models.chatamu;
+package models;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -62,5 +62,43 @@ public class ChatFunctions {
         String argument = (!message.contains(" ")) ? "" : message.substring(message.indexOf(" ")+1);
         //Retour du message sécurisé
         return operation + "\b " + argument;
+    }
+
+    /**
+     * Traduire un résultat en message français compréhensible
+     * @param result résultat
+     * @return traduction française
+     */
+    public String traductResult(String result) {
+        switch (result) {
+            case "[ERROR PORT]":
+                return "Port invalide";
+            case "[CONNECTION REFUSED]":
+                return "Connexion refusée";
+            case "[FAIL RECONNECT]":
+                return "Reconnexion impossible";
+            case "[SOCKET WRITE FAILED]":
+                return "Écriture sur le serveur impossible";
+            case "[DISCONNECT]":
+                return "Déconnexion du serveur";
+            case "[CONNECTION LOST]":
+                return "Connexion au serveur perdue";
+            case "[USERNAME ALREADY USED]":
+                return "Pseudo déjà utilisé sur le serveur";
+            case "[USERNAME INVALID]":
+                return "Pseudo invalide (3 caractères minimum)";
+            case "[FAIR NOT FOUND]":
+                return "Salon introuvable";
+            case "[INVALID FAIR NAME]":
+                return "Nom de salon invalide";
+            case "[FAIR ALREADY CREATED]":
+                return "Nom de salon déjà utilisé";
+            case "[SAME FAIR LOCATION]":
+                return "Vous vous situez déjà dans le salon";
+            case "[ERROR CHATAMU]":
+                return "ERROR chatamu";
+            default:
+                return null;
+        }
     }
 }

@@ -13,7 +13,9 @@ public class Main extends Application {
         //Initialisation du controleur
         ClientController controller = new ClientController(primaryStage);
         //Récupération de la scène du controleur
-        primaryStage.setScene(controller.getScene());//controller.getScene()
+        primaryStage.setScene(controller.getScene());
+        //Ajout du style
+        primaryStage.getScene().getStylesheets().add(getClass().getResource("style.css").toExternalForm());
         //Affichage de la fenêtre
         primaryStage.show();
     }
@@ -22,3 +24,6 @@ public class Main extends Application {
         launch(args);
     }
 }
+
+//TODO - afficher messages serveur en couleur
+//TODO - afficher erreurs

@@ -7,25 +7,26 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 
 /**
  * Page d'accueil
  */
 public class LoginPanel extends BorderPane {
-    private Label title;
-    private TextField username;
-    private Button connect;
+    private Label  identifiant = new Label("Identifiant");
+    private TextField username = new TextField();
+    private Button     connect = new Button("Valider");
+    private Label errorMessage = new Label();
 
     public LoginPanel() {
         setMinSize(500, 300);
-        title = new Label("Authentification");
-        connect = new Button("Valider");
-        connect.setMinWidth(100);
-        username = new TextField();
-        username.setMaxWidth(100);
+        connect.setMinWidth(150);
+        username.setMaxWidth(150);
         username.setPromptText("Identifiant");
-        VBox gamesButton = new VBox(title, username, connect);
-        VBox.setMargin(title, new Insets(10));
+        errorMessage.setTextFill(Color.RED);
+        identifiant.setStyle("-fx-font-size: 30");
+        VBox gamesButton = new VBox(identifiant, username, connect, errorMessage);
+        VBox.setMargin(identifiant, new Insets(10));
         BorderPane.setAlignment(gamesButton, Pos.CENTER);
         setCenter(gamesButton);
         gamesButton.setAlignment(Pos.CENTER);
@@ -38,5 +39,9 @@ public class LoginPanel extends BorderPane {
 
     public Button getConnect() {
         return connect;
+    }
+
+    public void showError(String message) {
+        errorMessage.setText(message);
     }
 }
