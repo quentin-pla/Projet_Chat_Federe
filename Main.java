@@ -24,6 +24,3 @@ public class Main extends Application {
         launch(args);
     }
 }
-
-//TODO - afficher messages serveur en couleur
-//TODO - afficher erreurs
